@@ -80,6 +80,9 @@ SELECT
     hrv_balance_score,
     recovery_index_score,
     temperature_deviation,
+    resting_heart_rate,
+    resting_heart_rate_score,
+    average_hrv,
     activity_score,
     preferred_steps,
     active_calories,
@@ -111,6 +114,9 @@ SELECT
     hrv_balance_score,
     recovery_index_score,
     temperature_deviation,
+    resting_heart_rate,
+    resting_heart_rate_score,
+    average_hrv,
     activity_score,
     preferred_steps,
     active_calories,
@@ -193,6 +199,8 @@ def build_insight_prompt(today: dict, trends: list, personal_context: dict) -> s
     avg_sleep = round(sum(r["sleep_score"] for r in recent if r["sleep_score"]) / max(len(recent), 1), 1) if recent else None
     avg_readiness = round(sum(r["readiness_score"] for r in recent if r["readiness_score"]) / max(len(recent), 1), 1) if recent else None
     avg_hrv = round(sum(r["hrv_balance_score"] for r in recent if r["hrv_balance_score"]) / max(len(recent), 1), 1) if recent else None
+    avg_rhr = round(sum(r["resting_heart_rate"] for r in recent if r.get("resting_heart_rate")) / max(sum(1 for r in recent if r.get("resting_heart_rate")), 1), 1) if recent else None
+    avg_hrv_ms = round(sum(r["average_hrv"] for r in recent if r.get("average_hrv")) / max(sum(1 for r in recent if r.get("average_hrv")), 1), 1) if recent else None
     recent_workouts = sum(1 for r in trends[-7:] if r.get("has_workout"))
 
     sections = []
@@ -201,8 +209,8 @@ def build_insight_prompt(today: dict, trends: list, personal_context: dict) -> s
     sections.append("=== TODAY'S METRICS ===")
     if today.get("has_oura_data"):
         sections.append(f"Sleep score: {today.get('sleep_score')} (deep: {today.get('deep_sleep_score')}, REM: {today.get('rem_sleep_score')}, restfulness: {today.get('restfulness_score')})")
-        sections.append(f"Readiness: {today.get('readiness_score')} | HRV balance: {today.get('hrv_balance_score')} | Recovery index: {today.get('recovery_index_score')}")
-        sections.append(f"Temp deviation: {today.get('temperature_deviation')}°C")
+        sections.append(f"Readiness: {today.get('readiness_score')} | HRV balance score: {today.get('hrv_balance_score')} | Recovery index: {today.get('recovery_index_score')}")
+        sections.append(f"Resting heart rate: {today.get('resting_heart_rate')} bpm | HRV (ms): {today.get('average_hrv')} | Temp deviation: {today.get('temperature_deviation')}°C")
     else:
         sections.append("Oura data: not yet available")
 
@@ -219,7 +227,8 @@ def build_insight_prompt(today: dict, trends: list, personal_context: dict) -> s
 
     # 7-day trends
     sections.append("\n=== 7-DAY TRENDS ===")
-    sections.append(f"Avg sleep score: {avg_sleep} | Avg readiness: {avg_readiness} | Avg HRV balance: {avg_hrv}")
+    sections.append(f"Avg sleep score: {avg_sleep} | Avg readiness: {avg_readiness} | Avg HRV balance score: {avg_hrv}")
+    sections.append(f"Avg resting HR: {avg_rhr} bpm | Avg HRV: {avg_hrv_ms} ms")
     sections.append(f"Workouts in last 7 days: {recent_workouts}")
 
     # Weather
@@ -695,7 +704,7 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
       <span class="subtext" id="tile-readiness-sub">HRV balance: {{ today.hrv_balance_score or '—' }}</span>
     </div>
     <div class="stat-tile">
-      <span class="label">Activity</span>
+      <span class="label">Activity <span style="font-weight:400;font-size:0.68rem;opacity:0.6;">(yesterday)</span></span>
       <span class="value" id="tile-activity-value">{{ today.activity_score or '—' }}</span>
       <span class="subtext" id="tile-activity-sub">Steps: {{ '{:,}'.format(today.preferred_steps) if today.preferred_steps else '—' }}</span>
     </div>
@@ -714,12 +723,19 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
   <!-- Charts row -->
   <div class="grid-2">
     <div class="card">
-      <div class="card-title">Sleep & Readiness — 30 Days</div>
+      <div class="card-title">Sleep &amp; Readiness — 30 Days &nbsp;<span style="font-weight:400;font-size:0.75rem;"><span style="color:#CC2200;">●</span> Sleep &nbsp;<span style="color:#FFCC00;">●</span> Readiness</span></div>
       <div class="chart-container" id="chart-sleep"></div>
     </div>
     <div class="card">
-      <div class="card-title">HRV Balance — 30 Days</div>
-      <div class="chart-container" id="chart-hrv"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
+        <div class="card-title" style="margin-bottom:0;">Heart Rate &amp; HRV — 30 Days &nbsp;<span style="font-weight:400;font-size:0.75rem;" id="hrv-legend-raw"><span style="color:#CC2200;">●</span> Resting HR &nbsp;<span style="color:#1155BB;">●</span> HRV</span><span style="font-weight:400;font-size:0.75rem;display:none;" id="hrv-legend-score"><span style="color:#1155BB;">●</span> HRV Score &nbsp;<span style="color:#CC2200;">●</span> HR Score</span></div>
+        <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden;font-size:0.72rem;">
+          <button id="hrv-btn-raw" onclick="showHrvRaw()" style="padding:0.2rem 0.6rem;background:var(--accent2);color:#000;border:none;cursor:pointer;font-size:0.72rem;">Raw</button>
+          <button id="hrv-btn-score" onclick="showHrvScore()" style="padding:0.2rem 0.6rem;background:none;color:var(--text-dim);border:none;cursor:pointer;font-size:0.72rem;">Oura Scores</button>
+        </div>
+      </div>
+      <div class="chart-container" id="chart-hrv-raw"></div>
+      <div class="chart-container" id="chart-hrv-score" style="display:none;"></div>
     </div>
   </div>
 
@@ -1032,6 +1048,95 @@ function lineChart(containerId, data, lines, opts = {}) {
       })
       .on("mouseout", hideTooltip);
   }
+
+}
+
+// Dual-axis line chart (left axis = line1, right axis = line2)
+function dualAxisChart(containerId, data, line1, line2) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const W = el.clientWidth || 500, H = 160;
+  const margin = { top: 12, right: 48, bottom: 28, left: 36 };
+  const w = W - margin.left - margin.right;
+  const h = H - margin.top - margin.bottom;
+
+  const svg = d3.select(el).append("svg").attr("width", W).attr("height", H);
+  const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const parseDate = d3.timeParse("%Y-%m-%d");
+  const fmt = d3.timeFormat("%b %d");
+
+  const x = d3.scaleTime()
+    .domain(d3.extent(data, d => parseDate(d.date)))
+    .range([0, w]);
+
+  const vals1 = data.map(d => d[line1.key]).filter(v => v != null);
+  const vals2 = data.map(d => d[line2.key]).filter(v => v != null);
+
+  const yL = d3.scaleLinear()
+    .domain([d3.min(vals1) - 3, d3.max(vals1) + 3])
+    .range([h, 0]);
+  const yR = d3.scaleLinear()
+    .domain([d3.min(vals2) - 5, d3.max(vals2) + 5])
+    .range([h, 0]);
+
+  // Grid
+  g.append("g").attr("class", "grid")
+    .call(d3.axisLeft(yL).tickSize(-w).tickFormat("").ticks(4));
+
+  // Axes
+  g.append("g").attr("transform", `translate(0,${h})`).call(d3.axisBottom(x).ticks(6).tickFormat(fmt));
+  g.append("g").call(d3.axisLeft(yL).ticks(4));
+  g.append("g").attr("transform", `translate(${w},0)`)
+    .call(d3.axisRight(yR).ticks(4))
+    .selectAll("text").attr("fill", line2.color);
+
+  // Draw each line
+  for (const [line, yScale] of [[line1, yL], [line2, yR]]) {
+    const valid = data.filter(d => d[line.key] != null);
+    if (valid.length === 0) continue;
+
+    const lineFn = d3.line()
+      .defined(d => d[line.key] != null)
+      .x(d => x(parseDate(d.date)))
+      .y(d => yScale(d[line.key]))
+      .curve(d3.curveMonotoneX);
+
+    g.append("path").datum(data)
+      .attr("fill", "none").attr("stroke", line.color)
+      .attr("stroke-width", 2).attr("d", lineFn);
+
+    g.selectAll(`.dot-${line.key}`)
+      .data(valid.slice(-14)).join("circle")
+      .attr("class", `dot-${line.key}`)
+      .attr("cx", d => x(parseDate(d.date)))
+      .attr("cy", d => yScale(d[line.key]))
+      .attr("r", 3).attr("fill", line.color)
+      .on("mouseover", (event, d) => showTooltip(event, `<b>${fmt(parseDate(d.date))}</b><br>${line.label}: <b>${d[line.key]}</b>`))
+      .on("mouseout", hideTooltip);
+  }
+
+}
+
+function showHrvRaw() {
+  document.getElementById("chart-hrv-raw").style.display = "";
+  document.getElementById("chart-hrv-score").style.display = "none";
+  document.getElementById("hrv-legend-raw").style.display = "";
+  document.getElementById("hrv-legend-score").style.display = "none";
+  document.getElementById("hrv-btn-raw").style.background = "var(--accent2)";
+  document.getElementById("hrv-btn-raw").style.color = "#000";
+  document.getElementById("hrv-btn-score").style.background = "none";
+  document.getElementById("hrv-btn-score").style.color = "var(--text-dim)";
+}
+function showHrvScore() {
+  document.getElementById("chart-hrv-raw").style.display = "none";
+  document.getElementById("chart-hrv-score").style.display = "";
+  document.getElementById("hrv-legend-raw").style.display = "none";
+  document.getElementById("hrv-legend-score").style.display = "";
+  document.getElementById("hrv-btn-score").style.background = "var(--accent2)";
+  document.getElementById("hrv-btn-score").style.color = "#000";
+  document.getElementById("hrv-btn-raw").style.background = "none";
+  document.getElementById("hrv-btn-raw").style.color = "var(--text-dim)";
 }
 
 // Bar chart factory (for steps, workouts)
@@ -1090,8 +1195,13 @@ window.addEventListener("DOMContentLoaded", () => {
     { key: "readiness_score", label: "Readiness", color: "#FFCC00" },
   ], { yMin: 0, yMax: 100 });
 
-  lineChart("chart-hrv", TREND_DATA, [
-    { key: "hrv_balance_score", label: "HRV Balance", color: "#1155BB" },
+  dualAxisChart("chart-hrv-raw", TREND_DATA,
+    { key: "resting_heart_rate", label: "Resting HR (bpm)", color: "#CC2200" },
+    { key: "average_hrv",        label: "HRV (ms)",         color: "#1155BB" }
+  );
+  lineChart("chart-hrv-score", TREND_DATA, [
+    { key: "hrv_balance_score",      label: "HRV Balance",  color: "#1155BB" },
+    { key: "resting_heart_rate_score", label: "HR Score",   color: "#CC2200" },
   ], { yMin: 0, yMax: 100 });
 
   barChart("chart-steps", TREND_DATA, "preferred_steps", d => {
@@ -1288,10 +1398,16 @@ def build_health_context(today_row: dict, trend_rows: list, personal_context: di
     if not today_row:
         return {"error": "No data for today", "personal": personal_context}
 
+    from datetime import date as _date, timedelta as _td
+    yesterday_str = (_date.today() - _td(days=1)).isoformat()
+    yesterday_row = next((r for r in trend_rows if str(r.get("date")) == yesterday_str), {})
+
     recent = [r for r in trend_rows[-7:] if r.get("has_oura_data")]
     avg_sleep = round(sum(r["sleep_score"] for r in recent if r["sleep_score"]) / max(len(recent), 1), 1) if recent else None
     avg_readiness = round(sum(r["readiness_score"] for r in recent if r["readiness_score"]) / max(len(recent), 1), 1) if recent else None
     avg_hrv = round(sum(r["hrv_balance_score"] for r in recent if r["hrv_balance_score"]) / max(len(recent), 1), 1) if recent else None
+    avg_rhr = round(sum(r["resting_heart_rate"] for r in recent if r.get("resting_heart_rate")) / max(sum(1 for r in recent if r.get("resting_heart_rate")), 1), 1) if recent else None
+    avg_hrv_ms = round(sum(r["average_hrv"] for r in recent if r.get("average_hrv")) / max(sum(1 for r in recent if r.get("average_hrv")), 1), 1) if recent else None
 
     return {
         "today": {
@@ -1303,25 +1419,28 @@ def build_health_context(today_row: dict, trend_rows: list, personal_context: di
             "hrv_balance_score": today_row.get("hrv_balance_score"),
             "recovery_index_score": today_row.get("recovery_index_score"),
             "temperature_deviation": today_row.get("temperature_deviation"),
-            "activity_score": today_row.get("activity_score"),
-            "preferred_steps": today_row.get("preferred_steps"),
-            "active_calories": today_row.get("active_calories"),
-            "mood": today_row.get("mood"),
-            "mood_score": today_row.get("mood_score"),
-            "daylio_activities": today_row.get("daylio_activities"),
+            "resting_heart_rate": today_row.get("resting_heart_rate"),
+            "average_hrv": today_row.get("average_hrv"),
+            # Activity and mood lag by one day — use yesterday's row
+            "activity_score": yesterday_row.get("activity_score"),
+            "preferred_steps": yesterday_row.get("preferred_steps"),
+            "active_calories": yesterday_row.get("active_calories"),
+            "mood": yesterday_row.get("mood"),
+            "mood_score": yesterday_row.get("mood_score"),
+            "daylio_activities": yesterday_row.get("daylio_activities"),
             "mood_state": (
-                [p.strip() for p in today_row["daylio_activities"].split("|")][0]
-                if today_row.get("daylio_activities") else None
+                [p.strip() for p in yesterday_row["daylio_activities"].split("|")][0]
+                if yesterday_row.get("daylio_activities") else None
             ),
             "mood_tags": (
-                [p.strip() for p in today_row["daylio_activities"].split("|")][1:]
-                if today_row.get("daylio_activities") and "|" in today_row["daylio_activities"] else []
+                [p.strip() for p in yesterday_row["daylio_activities"].split("|")][1:]
+                if yesterday_row.get("daylio_activities") and "|" in yesterday_row["daylio_activities"] else []
             ),
-            "workout_count": today_row.get("workout_count"),
-            "workout_names": today_row.get("workout_names"),
-            "total_workout_minutes": today_row.get("total_workout_minutes"),
+            "workout_count": yesterday_row.get("workout_count"),
+            "workout_names": yesterday_row.get("workout_names"),
+            "total_workout_minutes": yesterday_row.get("total_workout_minutes"),
             "has_oura_data": today_row.get("has_oura_data"),
-            "has_workout": today_row.get("has_workout"),
+            "has_workout": yesterday_row.get("has_workout"),
         },
         "weather": {
             "desc": today_row.get("weather_desc"),
@@ -1343,7 +1462,9 @@ def build_health_context(today_row: dict, trend_rows: list, personal_context: di
         "trends_7day": {
             "avg_sleep_score": avg_sleep,
             "avg_readiness_score": avg_readiness,
-            "avg_hrv_balance": avg_hrv,
+            "avg_hrv_balance_score": avg_hrv,
+            "avg_resting_heart_rate_bpm": avg_rhr,
+            "avg_hrv_ms": avg_hrv_ms,
             "workouts": sum(1 for r in trend_rows[-7:] if r.get("has_workout")),
         },
         "personal": personal_context,
@@ -1375,14 +1496,20 @@ def render_dashboard(today_row: dict, trend_rows: list, insights: dict, personal
     today_clean = clean_row(today_row)
     trends_clean = [clean_row(r) for r in trend_rows]
 
-    # Mood is logged at ~8pm so always show yesterday's entry on the tile
+    # Mood and activity are logged with a lag — always show yesterday's entry
     from datetime import date as _date, timedelta as _td
     yesterday_str = (_date.today() - _td(days=1)).isoformat()
     yesterday_row = next((r for r in trends_clean if r.get("date") == yesterday_str), {})
+
     has_yesterday_mood = bool(yesterday_row.get("has_mood_log"))
     for field in ("mood", "mood_score", "daylio_activities", "mood_state"):
         today_clean[field] = yesterday_row.get(field) if has_yesterday_mood else None
     today_clean["mood_tags"] = yesterday_row.get("mood_tags") or [] if has_yesterday_mood else []
+
+    has_yesterday_activity = bool(yesterday_row.get("has_garmin_steps") or yesterday_row.get("activity_score"))
+    for field in ("activity_score", "preferred_steps", "active_calories", "workout_count",
+                  "total_workout_minutes", "workout_names", "has_workout"):
+        today_clean[field] = yesterday_row.get(field) if has_yesterday_activity else None
 
     health_context = build_health_context(today_row, trend_rows, personal_context)
 

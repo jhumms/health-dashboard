@@ -44,6 +44,10 @@ weather as (
     select * from {{ ref('stg_weather') }}
 ),
 
+sleep_sessions as (
+    select * from {{ ref('stg_oura_sleep') }}
+),
+
 -- Aggregate strength sessions by date (can have multiple per day)
 strength as (
     select
@@ -71,6 +75,11 @@ select
     readiness.hrv_balance_score,
     readiness.recovery_index_score,
     readiness.temperature_deviation,
+    readiness.resting_heart_rate_score,
+
+    -- Heart rate & HRV from full sleep session
+    sleep_sessions.resting_heart_rate,
+    sleep_sessions.average_hrv,
 
     -- Activity (Oura)
     activity.activity_score,
@@ -138,6 +147,7 @@ left join activity  on spine.date = activity.date
 left join steps     on spine.date = steps.date
 left join mood      on spine.date = mood.date
 left join strength  on spine.date = strength.date
+left join sleep_sessions on spine.date = sleep_sessions.date
 left join weather   on spine.date = weather.date
 
 order by spine.date desc
