@@ -13,6 +13,7 @@ logs/
 *_debug.txt
 
 # Raw data exports / uploads
+ingestion/drops/
 oura_exports/oura_data_*/
 daily_strength_exports/extracted/
 daily_strength_exports/*.zip
