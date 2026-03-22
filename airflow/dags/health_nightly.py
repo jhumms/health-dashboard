@@ -11,8 +11,9 @@ Pipeline order:
   ingest_daily_strength
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
+import pendulum
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 
@@ -33,8 +34,8 @@ default_args = {
 with DAG(
     dag_id="health_nightly",
     description="Nightly health data ingestion → dbt → dashboard",
-    schedule_interval="0 6 * * *",
-    start_date=datetime(2026, 3, 21),
+    schedule_interval="0 7 * * *",
+    start_date=pendulum.datetime(2026, 3, 21, tz="America/New_York"),
     catchup=False,
     default_args=default_args,
     tags=["health"],
