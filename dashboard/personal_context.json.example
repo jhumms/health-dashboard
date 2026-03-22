@@ -1,0 +1,11 @@
+{
+  "name": "John Doe",
+  "location": "Fairbanks, Alaska",
+  "fitness_goal": "Maintain base fitness during paternity leave; prioritize recovery and consistency over performance",
+  "typical_run_pace_per_km": "5:30",
+  "injuries": "none current",
+  "family_situation": "New baby at home. Frequent night wakings mean sleep is often fragmented regardless of what trackers show. Time for workouts is limited and unpredictable.",
+  "wearables": ["Oura Ring", "Garmin"],
+  "preferred_workout_types": ["running", "strength training"],
+  "notes": "When recommending workout timing, always factor in weather windows, readiness score, and realistic baby schedule gaps. Recovery and sustainability over performance. Never be preachy."
+}

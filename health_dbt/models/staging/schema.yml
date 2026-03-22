@@ -1,0 +1,69 @@
+version: 2
+
+models:
+  - name: stg_oura_daily_sleep
+    description: Oura daily sleep scores with contributor breakdown
+    columns:
+      - name: id
+        tests: [unique, not_null]
+      - name: date
+        tests: [not_null]
+      - name: sleep_score
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+  - name: stg_oura_daily_readiness
+    description: Oura daily readiness scores with contributor breakdown
+    columns:
+      - name: id
+        tests: [unique, not_null]
+      - name: date
+        tests: [not_null]
+      - name: readiness_score
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+  - name: stg_oura_daily_activity
+    description: Oura daily activity metrics
+    columns:
+      - name: id
+        tests: [unique, not_null]
+      - name: date
+        tests: [not_null]
+
+  - name: stg_garmin_daily_steps
+    description: Garmin daily step counts, aggregated and date normalized
+    columns:
+      - name: date
+        tests: [unique, not_null]
+      - name: steps
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100000
+
+  - name: stg_daylio_logs
+    description: Daylio mood journal entries with numeric mood score
+    columns:
+      - name: date
+        tests: [unique, not_null]
+      - name: mood
+        tests: [not_null]
+
+  - name: stg_daily_strength_session
+    description: Daily Strength workout sessions with duration and exercise count
+    columns:
+      - name: id
+        tests: [unique, not_null]
+      - name: date
+        tests: [not_null]

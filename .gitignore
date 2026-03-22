@@ -1,0 +1,67 @@
+# Credentials — never commit
+.env
+*.env
+
+# Databases
+*.db
+*.sqlite3
+
+# Logs
+*.log
+logs/
+*_log.txt
+*_debug.txt
+
+# Raw data exports / uploads
+oura_exports/oura_data_*/
+daily_strength_exports/extracted/
+daily_strength_exports/*.zip
+daylio_exports/*.csv
+garmin_pull/steps_csvs/
+
+# Data files (personal health data — not for version control)
+*.xlsx
+*.xls
+
+# State / flag files
+*.flag
+sent_errors.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Claude Code local settings
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp
+
+# Personal Information
+dashboard/personal_context.json
+dashboard/output/dashboard.html
+
+# Airflow runtime files (airflow.cfg has DB credentials)
+airflow/airflow.cfg
+airflow/webserver_config.py
+airflow/*.pid
+airflow/logs/
+airflow/airflow.db
+
+# Generated dashboard output
+dashboard/output/insights_*.json

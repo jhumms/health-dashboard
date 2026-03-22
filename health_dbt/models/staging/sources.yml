@@ -1,0 +1,55 @@
+version: 2
+
+sources:
+  - name: raw
+    database: health_db
+    schema: raw
+    tables:
+      - name: oura_daily_sleep
+        description: Oura daily sleep scores (one row per day)
+        loaded_at_field: pulled_at
+        freshness:
+          warn_after: {count: 2, period: day}
+          error_after: {count: 7, period: day}
+
+      - name: oura_daily_readiness
+        description: Oura daily readiness scores (one row per day)
+        loaded_at_field: pulled_at
+        freshness:
+          warn_after: {count: 2, period: day}
+          error_after: {count: 7, period: day}
+
+      - name: oura_daily_activity
+        description: Oura daily activity metrics (one row per day)
+        loaded_at_field: pulled_at
+        freshness:
+          warn_after: {count: 2, period: day}
+          error_after: {count: 7, period: day}
+
+      - name: garmin_daily_steps
+        description: Garmin daily step counts (one row per day)
+        loaded_at_field: pulled_at
+        freshness:
+          warn_after: {count: 2, period: day}
+          error_after: {count: 7, period: day}
+
+      - name: daylio_logs
+        description: Daylio mood journal entries (one row per day)
+        loaded_at_field: pulled_at
+        freshness:
+          warn_after: {count: 7, period: day}
+          error_after: {count: 30, period: day}
+
+      - name: daily_strength_session
+        description: Daily Strength workout sessions (one row per workout)
+        loaded_at_field: pulled_at
+        freshness:
+          warn_after: {count: 7, period: day}
+          error_after: {count: 30, period: day}
+
+      - name: weather_daily
+        description: Daily weather from Open-Meteo with hourly AM/PM breakdowns
+        loaded_at_field: pulled_at
+        freshness:
+          warn_after: {count: 2, period: day}
+          error_after: {count: 5, period: day}

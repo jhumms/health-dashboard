@@ -1,0 +1,13 @@
+# Copy this to airflow.cfg and fill in your values.
+# Key settings to change from Airflow defaults:
+
+[core]
+executor = LocalExecutor
+load_examples = False
+
+[database]
+sql_alchemy_conn = postgresql+psycopg2://<user>:<password>@localhost/airflow_db
+
+[webserver]
+# Change the secret key for production
+secret_key = <generate-a-random-string>

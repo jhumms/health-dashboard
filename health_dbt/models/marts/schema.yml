@@ -1,0 +1,29 @@
+version: 2
+
+models:
+  - name: daily_summary
+    description: >
+      One row per calendar date joining all health sources.
+      Left-joined so dates with partial data are included.
+      Use has_* flags to filter for dates with complete data.
+    columns:
+      - name: date
+        tests: [unique, not_null]
+      - name: sleep_score
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+      - name: readiness_score
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+      - name: mood_score
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 5
