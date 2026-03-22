@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-DB_DSN     = os.getenv("DATABASE_URL", "postgresql://jhumms:health2026@localhost/health_db")
+DB_DSN     = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/health_db")
 LOCAL_DIR  = os.getenv("DAILY_STRENGTH_DIR", "/home/jhumms/health_workflow/ingestion/drops/daily_strength")
 GDRIVE_PATH = os.getenv("DAILY_STRENGTH_GDRIVE", "gdrive:Phone/DailyStrength")
 EXTRACT_DIR = os.path.join(LOCAL_DIR, "extracted")

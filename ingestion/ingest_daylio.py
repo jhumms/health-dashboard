@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-DB_DSN   = os.getenv("DATABASE_URL", "postgresql://jhumms:health2026@localhost/health_db")
+DB_DSN   = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/health_db")
 DROP_DIR = os.getenv("DAYLIO_DROP_DIR", "/home/jhumms/health_workflow/ingestion/drops/daylio")
 
 EXPECTED_COLUMNS = {"full_date", "date", "weekday", "time", "mood", "activities", "note_title", "note"}

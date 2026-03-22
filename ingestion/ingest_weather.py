@@ -31,7 +31,7 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-DB_DSN = os.getenv("DATABASE_URL", "postgresql://jhumms:health2026@localhost/health_db")
+DB_DSN = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/health_db")
 
 # Open-Meteo endpoints (no API key required)
 FORECAST_URL  = "https://api.open-meteo.com/v1/forecast"

@@ -22,7 +22,7 @@ import psycopg2.extras
 
 log = logging.getLogger(__name__)
 
-DB_DSN = os.getenv("DATABASE_URL", "postgresql://jhumms:health2026@localhost/health_db")
+DB_DSN = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/health_db")
 
 # ---------------------------------------------------------------------------
 # Allowed metrics — whitelist prevents any injection via metric names

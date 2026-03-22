@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 OURA_TOKEN = os.getenv("OURA_ACCESS_TOKEN")
-DB_DSN = os.getenv("DATABASE_URL", "postgresql://jhumms:health2026@localhost/health_db")
+DB_DSN = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/health_db")
 
 OURA_BASE = "https://api.ouraring.com/v2/usercollection"
 

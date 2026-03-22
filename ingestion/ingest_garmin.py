@@ -31,7 +31,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 GARMIN_EMAIL    = os.getenv("GARMIN_EMAIL")
 GARMIN_PASSWORD = os.getenv("GARMIN_PASSWORD")
-DB_DSN          = os.getenv("DATABASE_URL", "postgresql://jhumms:health2026@localhost/health_db")
+DB_DSN          = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/health_db")
 
 # ---------------------------------------------------------------------------
 # Logging

@@ -17,7 +17,7 @@ import psycopg2.extras
 
 log = logging.getLogger(__name__)
 
-_DSN_DEFAULT = "postgresql://jhumms:health2026@localhost/health_db"
+_DSN_DEFAULT = "postgresql://user:password@localhost/health_db"
 
 MODEL_PRICING = {
     "claude-haiku-4-5":  {"input": 1.00 / 1_000_000, "output":  5.00 / 1_000_000},

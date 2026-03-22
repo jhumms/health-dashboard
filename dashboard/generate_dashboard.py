@@ -46,7 +46,7 @@ def dumps(obj):
 SCRIPT_DIR = Path(__file__).parent
 load_dotenv(SCRIPT_DIR.parent / "ingestion" / ".env")
 
-DB_DSN = os.getenv("DATABASE_URL", "postgresql://jhumms:health2026@localhost/health_db")
+DB_DSN = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/health_db")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 OUTPUT_PATH = SCRIPT_DIR / "output" / "dashboard.html"
 PERSONAL_CONTEXT_PATH = SCRIPT_DIR / "personal_context.json"
