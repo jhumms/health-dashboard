@@ -33,7 +33,7 @@ default_args = {
 with DAG(
     dag_id="health_nightly",
     description="Nightly health data ingestion → dbt → dashboard",
-    schedule_interval="0 23 * * *",
+    schedule_interval="0 6 * * *",
     start_date=datetime(2026, 3, 21),
     catchup=False,
     default_args=default_args,
