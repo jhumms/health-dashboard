@@ -58,16 +58,13 @@ SYSTEM_PROMPT = """You are a personal health advisor for {name}. You have full a
 Personal context:
 {personal_context}
 {active_notes}
-You have five tools available:
+You have four database tools available:
 - get_period_stats: aggregate stats for a metric over any date range
 - get_daily_records: day-by-day data for trend and correlation questions
 - get_top_days: best or worst days for any metric
 - get_workout_history: comprehensive workout analysis
-- save_context_note: save a temporary health note that auto-expires (use when the user mentions jetlag, illness, injury, travel, or any short-term condition)
 
 Always query the database when the question involves historical data, trends, comparisons, or anything beyond today. Today's metrics are pre-loaded in the context — use tools for anything historical.
-
-IMPORTANT: If the user's message mentions ANY temporary condition — jetlag, illness, injury, travel fatigue, stress, medication, surgery recovery, or anything short-term affecting their health — you MUST call save_context_note before or alongside answering their question. Do not skip this even if the main question is about something else. Estimate a realistic recovery window, and after saving, briefly mention what you saved and when it expires.
 
 Be direct and practical. Acknowledge the reality of new parenthood where relevant. No markdown headers. Keep responses conversational and to the point."""
 
@@ -88,6 +85,48 @@ def health_check():
     return jsonify({"status": "ok", "dashboard_exists": DASHBOARD_PATH.exists()})
 
 
+DETECTION_MODEL = "claude-haiku-4-5"
+DETECTION_PROMPT = """Does this message mention a temporary health condition the person is currently experiencing?
+Examples: jetlag, cold, flu, injury, illness, travel fatigue, stress, surgery recovery, medication side effects.
+Ignore past conditions that are clearly resolved or hypothetical.
+
+If yes, respond with JSON only:
+{"detected": true, "note": "<concise third-person description>", "expires_days": <integer>}
+
+Recovery guidelines for expires_days:
+- jetlag: 1 day per timezone hour crossed, typically 5-10 days
+- mild cold: 7 days
+- flu: 10-14 days
+- travel fatigue (no jetlag): 2-3 days
+- minor injury/strain: 14 days
+- stress/burnout: 7-14 days
+
+If no temporary condition is mentioned, respond with:
+{"detected": false}
+
+Respond with JSON only. No other text."""
+
+
+def _detect_and_save_condition(message: str) -> None:
+    """Run a cheap Haiku pre-pass to detect and persist any temporary health condition."""
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        resp = client.messages.create(
+            model=DETECTION_MODEL,
+            max_tokens=120,
+            messages=[{"role": "user", "content": message}],
+            system=DETECTION_PROMPT,
+        )
+        raw = next((b.text for b in resp.content if b.type == "text"), "").strip()
+        result = json.loads(raw)
+        if result.get("detected"):
+            saved = context_notes.save_note(result["note"], result["expires_days"])
+            log.info("Auto-saved context note (expires %s): %s", saved.get("expires"), saved.get("note"))
+        llm_logging.log_llm_call("condition_detection", DETECTION_MODEL, resp.usage.input_tokens, resp.usage.output_tokens)
+    except Exception as e:
+        log.warning("Condition detection failed (non-fatal): %s", e)
+
+
 @app.route("/chat", methods=["POST"])
 def chat():
     if not ANTHROPIC_API_KEY:
@@ -102,6 +141,10 @@ def chat():
 
     personal = health_context.get("personal", {})
     name = personal.get("name", "Joshua")
+
+    # Pre-pass: detect and save any temporary health condition before main chat.
+    # Done separately so it never gets dropped in favour of answering the question.
+    _detect_and_save_condition(user_message)
 
     active = context_notes.get_active_notes()
     notes_block = ("\n" + context_notes.format_for_prompt(active) + "\n") if active else ""

@@ -53,6 +53,8 @@ health_workflow/
 │   ├── chat_server.py          # Flask server for Claude Sonnet chat
 │   ├── llm_logging.py          # Shared LLM cost tracking utility
 │   ├── rag.py                  # RAG tool for chat (queries Postgres)
+│   ├── context_notes.py        # Short-term health context with auto-expiry
+│   ├── context_notes.json      # Active temporary notes (gitignored)
 │   └── personal_context.json.example
 └── airflow/
     ├── dags/health_nightly.py  # Nightly pipeline DAG
@@ -148,3 +150,34 @@ The nightly Haiku insight is cached per day — re-running `generate_dashboard.p
 ## Personal Context
 
 `dashboard/personal_context.json` (gitignored) is sent with every AI call to give Claude background about you — goals, health conditions, medications, etc. See `personal_context.json.example` for the expected shape.
+
+---
+
+## Short-Term Context Notes
+
+Temporary health states — jetlag, illness, injury, travel fatigue — are automatically detected and saved when you mention them in chat. They're injected into both the nightly dashboard insights and every chat response until they expire.
+
+**How it works:**
+
+Every chat message runs a lightweight Haiku pre-pass that detects temporary conditions and saves them to `dashboard/context_notes.json` with an estimated expiry date:
+
+```
+You: "I came back on a flight from India last Friday, still pretty jetlagged"
+
+→ Auto-saved: "Jetlagged after long-haul flight from India. Circadian rhythm
+  significantly disrupted, energy and recovery likely suppressed."
+  Expires: 2026-04-01
+```
+
+Recovery estimates used:
+
+| Condition | Default expiry |
+|-----------|---------------|
+| Jetlag | ~1 day per timezone hour crossed (5–10 days) |
+| Mild cold | 7 days |
+| Flu | 10–14 days |
+| Travel fatigue | 2–3 days |
+| Minor injury/strain | 14 days |
+| Stress/burnout | 7–14 days |
+
+Notes expire silently — no cleanup needed. Active notes are filtered by date on every read and included in the AI context until they pass their expiry.

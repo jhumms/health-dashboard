@@ -56,6 +56,7 @@ Thumbs.db
 
 # Personal Information
 dashboard/personal_context.json
+dashboard/context_notes.json
 dashboard/output/dashboard.html
 
 # Airflow runtime files (airflow.cfg has DB credentials)
