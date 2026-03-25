@@ -59,7 +59,8 @@ with DAG(
 
     ingest_garmin = BashOperator(
         task_id="ingest_garmin",
-        bash_command=f"{PYTHON} {INGESTION}/ingest_garmin.py",
+        bash_command=f"{PYTHON} {INGESTION}/ingest_garmin.py || exit 99",
+        skip_on_exit_code=99,
     )
 
     ingest_weather = BashOperator(
@@ -82,6 +83,7 @@ with DAG(
     dbt_run = BashOperator(
         task_id="dbt_run",
         bash_command=f"cd {DBT_HOME} && {DBT_BIN} run",
+        trigger_rule="none_failed",
     )
 
     # ── Step 4: generate dashboard (after dbt) ───────────────────────────────

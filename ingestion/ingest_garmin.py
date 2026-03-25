@@ -51,14 +51,17 @@ log = logging.getLogger(__name__)
 # Garmin client
 # ---------------------------------------------------------------------------
 
+TOKEN_STORE = os.path.join(os.path.dirname(__file__), ".garmin_tokens")
+
 def garmin_login() -> Garmin:
     if not GARMIN_EMAIL or not GARMIN_PASSWORD:
         log.error("GARMIN_EMAIL or GARMIN_PASSWORD not set — check .env")
         sys.exit(1)
     try:
-        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
-        client.login()
-        log.info("Garmin login successful")
+        # Try reusing cached OAuth tokens first (avoids 429 rate limits)
+        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD, session_timeout=20)
+        client.login(TOKEN_STORE)
+        log.info("Garmin login successful (token cache: %s)", TOKEN_STORE)
         return client
     except (GarminConnectConnectionError, GarminConnectAuthenticationError) as e:
         log.error("Garmin login failed: %s", e)

@@ -1,6 +1,7 @@
 # Credentials — never commit
 .env
 *.env
+ingestion/.garmin_tokens
 
 # Databases
 *.db
