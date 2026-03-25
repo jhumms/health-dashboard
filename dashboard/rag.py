@@ -20,6 +20,8 @@ from typing import Any
 import psycopg2
 import psycopg2.extras
 
+import context_notes
+
 log = logging.getLogger(__name__)
 
 DB_DSN = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/health_db")
@@ -485,6 +487,38 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "name": "save_context_note",
+        "description": (
+            "Save a short-term health context note that will automatically expire after a given number of days. "
+            "Use this when the user mentions a temporary condition that will affect their health data — "
+            "such as jetlag, illness, travel, stress, medication, or injury. "
+            "Estimate a realistic recovery duration based on the condition. "
+            "The note will be injected into all future AI health analysis until it expires."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "note": {
+                    "type": "string",
+                    "description": (
+                        "A concise description of the temporary condition, written in third person. "
+                        "E.g. 'Jetlagged after Tokyo trip, circadian rhythm off' or "
+                        "'Recovering from a cold, energy and HRV likely suppressed'."
+                    ),
+                },
+                "expires_days": {
+                    "type": "integer",
+                    "description": (
+                        "Number of days until this note expires. Base on typical recovery: "
+                        "jetlag ~5-7 days, mild cold ~7 days, flu ~10-14 days, "
+                        "travel fatigue ~3 days, minor injury ~14 days."
+                    ),
+                },
+            },
+            "required": ["note", "expires_days"],
+        },
+    },
+    {
         "name": "get_workout_history",
         "description": (
             "Get a comprehensive workout analysis for a date range: total sessions, total minutes, "
@@ -513,4 +547,6 @@ def execute_tool(name: str, tool_input: dict) -> Any:
         return get_top_days(**tool_input)
     if name == "get_workout_history":
         return get_workout_history(**tool_input)
+    if name == "save_context_note":
+        return context_notes.save_note(**tool_input)
     return {"error": f"Unknown tool: {name}"}

@@ -24,6 +24,7 @@ from decimal import Decimal
 from dotenv import load_dotenv
 from jinja2 import Template
 
+import context_notes
 import llm_logging
 
 
@@ -185,11 +186,11 @@ SYSTEM_PROMPT = """You are a personal health advisor for {name}. You have comple
 
 Personal context:
 {personal_context}
-
+{active_notes}
 Be direct and practical. Acknowledge the reality of new parenthood — sleep may be fragmented regardless of what trackers show. Prioritize recovery and sustainability over performance. When recommending workout timing, factor in weather windows, readiness score, and realistic baby schedule gaps. Never be preachy. Keep it concise and actionable."""
 
 
-def build_insight_prompt(today: dict, trends: list, personal_context: dict) -> str:
+def build_insight_prompt(today: dict, trends: list, personal_context: dict, active_notes: list | None = None) -> str:
     """Build a structured prompt for today's health insights."""
     if not today:
         return "No health data available for today yet."
@@ -246,7 +247,11 @@ def build_insight_prompt(today: dict, trends: list, personal_context: dict) -> s
 
     health_context = "\n".join(sections)
 
-    return f"""{health_context}
+    notes_section = ""
+    if active_notes:
+        notes_section = "\n\n" + context_notes.format_for_prompt(active_notes)
+
+    return f"""{health_context}{notes_section}
 
 Based on all of this, provide Joshua with:
 1. A brief one-paragraph status summary ("How you're doing today")
@@ -288,9 +293,16 @@ def get_insights(today: dict, trends: list, personal_context: dict, dry_run: boo
             "watchout": "Set up your Anthropic API key to unlock personalized recommendations.",
         }
 
-    prompt = build_insight_prompt(today, trends, personal_context)
+    active = context_notes.get_active_notes()
+    notes_block = ("\n" + context_notes.format_for_prompt(active) + "\n") if active else ""
+
+    prompt = build_insight_prompt(today, trends, personal_context, active_notes=active)
     personal_str = json.dumps(personal_context, indent=2)
-    system = SYSTEM_PROMPT.format(name=personal_context.get("name", "Joshua"), personal_context=personal_str)
+    system = SYSTEM_PROMPT.format(
+        name=personal_context.get("name", "Joshua"),
+        personal_context=personal_str,
+        active_notes=notes_block,
+    )
 
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)

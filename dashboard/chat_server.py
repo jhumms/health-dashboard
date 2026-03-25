@@ -25,6 +25,7 @@ import anthropic
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_file
 
+import context_notes
 import llm_logging
 import rag
 
@@ -56,14 +57,17 @@ SYSTEM_PROMPT = """You are a personal health advisor for {name}. You have full a
 
 Personal context:
 {personal_context}
-
-You have four database tools available:
+{active_notes}
+You have five tools available:
 - get_period_stats: aggregate stats for a metric over any date range
 - get_daily_records: day-by-day data for trend and correlation questions
 - get_top_days: best or worst days for any metric
 - get_workout_history: comprehensive workout analysis
+- save_context_note: save a temporary health note that auto-expires (use when the user mentions jetlag, illness, injury, travel, or any short-term condition)
 
 Always query the database when the question involves historical data, trends, comparisons, or anything beyond today. Today's metrics are pre-loaded in the context — use tools for anything historical.
+
+When the user mentions a temporary condition (jetlag, cold, flu, injury, travel fatigue, stress, etc.), use save_context_note to record it. Estimate a realistic recovery window, explain your reasoning briefly, and confirm what you saved and when it will expire.
 
 Be direct and practical. Acknowledge the reality of new parenthood where relevant. No markdown headers. Keep responses conversational and to the point."""
 
@@ -99,9 +103,13 @@ def chat():
     personal = health_context.get("personal", {})
     name = personal.get("name", "Joshua")
 
+    active = context_notes.get_active_notes()
+    notes_block = ("\n" + context_notes.format_for_prompt(active) + "\n") if active else ""
+
     system = SYSTEM_PROMPT.format(
         name=name,
         personal_context=json.dumps(personal, indent=2),
+        active_notes=notes_block,
     )
 
     # First user message: today's context + the question
