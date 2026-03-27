@@ -17,6 +17,10 @@ import pendulum
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 
+import sys
+sys.path.insert(0, "/home/jhumms/health_workflow/airflow")
+from notify import on_success, on_failure
+
 PYTHON       = "/usr/bin/python3"
 INGESTION    = "/home/jhumms/health_workflow/ingestion"
 DASHBOARD    = "/home/jhumms/health_workflow/dashboard"
@@ -39,6 +43,8 @@ with DAG(
     catchup=False,
     default_args=default_args,
     tags=["health"],
+    on_success_callback=on_success,
+    on_failure_callback=on_failure,
 ) as dag:
 
     # ── Step 1: sync Daylio CSV from Google Drive ────────────────────────────

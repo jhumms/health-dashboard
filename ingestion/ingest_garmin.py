@@ -58,10 +58,15 @@ def garmin_login() -> Garmin:
         log.error("GARMIN_EMAIL or GARMIN_PASSWORD not set — check .env")
         sys.exit(1)
     try:
-        # Try reusing cached OAuth tokens first (avoids 429 rate limits)
-        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD, session_timeout=20)
-        client.login(TOKEN_STORE)
-        log.info("Garmin login successful (token cache: %s)", TOKEN_STORE)
+        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
+        # Use token cache if it exists, otherwise do a fresh credential login and save tokens
+        token_store = TOKEN_STORE if os.path.isdir(TOKEN_STORE) else None
+        client.login(token_store)
+        if token_store is None:
+            client.garth.dump(TOKEN_STORE)
+            log.info("Garmin login successful (fresh login, tokens saved to %s)", TOKEN_STORE)
+        else:
+            log.info("Garmin login successful (token cache: %s)", TOKEN_STORE)
         return client
     except (GarminConnectConnectionError, GarminConnectAuthenticationError) as e:
         log.error("Garmin login failed: %s", e)
