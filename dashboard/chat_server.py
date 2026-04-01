@@ -107,11 +107,11 @@ If no temporary condition is mentioned, respond with:
 Respond with JSON only. No other text."""
 
 
-RUN_DETECTION_PROMPT = """Does this message mention that the person just went for a run or is logging a run they completed?
-Only detect runs that the user is reporting as done — not questions about past runs or future plans.
+RUN_DETECTION_PROMPT = """Does this message mention that the person is logging one or more completed runs?
+Only detect runs being reported as done — not questions about past runs or future plans.
 
-If yes, extract the details and respond with JSON only:
-{"detected": true, "distance_miles": <float>, "duration_seconds": <integer>, "date": "<YYYY-MM-DD or null>", "notes": "<optional string or null>"}
+If yes, extract ALL runs and respond with JSON only:
+{{"detected": true, "runs": [{{"distance_miles": <float>, "duration_seconds": <integer>, "date": "<YYYY-MM-DD or null>", "notes": "<string or null>"}}]}}
 
 Conversion rules:
 - Distance: convert km to miles (1 km = 0.621371 miles), default to miles if unit unclear
@@ -121,20 +121,20 @@ Conversion rules:
 
 Today's date: {today}
 
-If no run is being reported, respond with:
-{"detected": false}
+If no runs are being reported, respond with:
+{{"detected": false}}
 
 Respond with JSON only. No other text."""
 
 
-def _detect_and_log_run(message: str) -> dict | None:
-    """Run a cheap Haiku pre-pass to detect and save a reported run. Returns saved run dict or None."""
+def _detect_and_log_run(message: str) -> list[dict] | None:
+    """Run a cheap Haiku pre-pass to detect and save reported runs. Returns list of saved runs or None."""
     try:
         today = rag._today_str()
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         resp = client.messages.create(
             model=DETECTION_MODEL,
-            max_tokens=150,
+            max_tokens=300,
             messages=[{"role": "user", "content": message}],
             system=RUN_DETECTION_PROMPT.format(today=today),
         )
@@ -142,14 +142,17 @@ def _detect_and_log_run(message: str) -> dict | None:
         result = json.loads(raw)
         llm_logging.log_llm_call("run_detection", DETECTION_MODEL, resp.usage.input_tokens, resp.usage.output_tokens)
         if result.get("detected"):
-            saved = rag.log_run(
-                distance_miles=result["distance_miles"],
-                duration_seconds=result["duration_seconds"],
-                date=result.get("date"),
-                notes=result.get("notes"),
-            )
-            log.info("Auto-logged run via Haiku: %s", saved)
-            return saved
+            saved_runs = []
+            for run in result.get("runs", []):
+                saved = rag.log_run(
+                    distance_miles=run["distance_miles"],
+                    duration_seconds=run["duration_seconds"],
+                    date=run.get("date"),
+                    notes=run.get("notes"),
+                )
+                log.info("Auto-logged run via Haiku: %s", saved)
+                saved_runs.append(saved)
+            return saved_runs if saved_runs else None
     except Exception as e:
         log.warning("Run detection failed (non-fatal): %s", e)
     return None
@@ -206,13 +209,18 @@ def chat():
 
     # First user message: today's context + the question
     context_summary = _format_context(health_context)
-    run_note = (
-        f"\n\n[System: Run already saved to database — {saved_run['distance_miles']} mi in "
-        f"{saved_run['duration']} ({saved_run['pace_min_per_mile']} min/mile pace) on {saved_run['date']}. "
-        f"Confirm this back to the user naturally, no need to re-save.]"
-        if saved_run and not saved_run.get("error")
-        else ""
-    )
+    if saved_run:
+        valid = [r for r in saved_run if not r.get("error")]
+        if valid:
+            entries = "; ".join(
+                f"{r['distance_miles']} mi in {r['duration']} ({r['pace_min_per_mile']} min/mile) on {r['date']}"
+                for r in valid
+            )
+            run_note = f"\n\n[System: {len(valid)} run(s) saved to database — {entries}. Confirm naturally, no need to re-save.]"
+        else:
+            run_note = ""
+    else:
+        run_note = ""
     first_message = f"{context_summary}\n\nQuestion: {user_message}{run_note}"
 
     messages = [{"role": "user", "content": first_message}]

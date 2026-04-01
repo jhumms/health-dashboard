@@ -99,6 +99,8 @@ SELECT
     oura_workout_minutes,
     oura_workout_types,
     run_distance_miles,
+    run_duration_minutes,
+    run_pace_min_per_mile,
     has_oura_data,
     has_mood_log,
     has_workout,
@@ -209,9 +211,14 @@ def build_insight_prompt(today: dict, trends: list, personal_context: dict, acti
     avg_rhr = round(sum(r["resting_heart_rate"] for r in recent if r.get("resting_heart_rate")) / max(sum(1 for r in recent if r.get("resting_heart_rate")), 1), 1) if recent else None
     avg_hrv_ms = round(sum(r["average_hrv"] for r in recent if r.get("average_hrv")) / max(sum(1 for r in recent if r.get("average_hrv")), 1), 1) if recent else None
     recent_workouts = sum(1 for r in trends[-7:] if r.get("has_workout"))
+    recent_run_rows = [r for r in trends[-7:] if r.get("has_run") and r.get("run_distance_miles")]
+    recent_run_miles = round(sum(r["run_distance_miles"] for r in recent_run_rows), 2) if recent_run_rows else 0
+    recent_run_paces = [r["run_pace_min_per_mile"] for r in recent_run_rows if r.get("run_pace_min_per_mile")]
+    avg_run_pace = round(sum(recent_run_paces) / len(recent_run_paces), 2) if recent_run_paces else None
 
     sections = []
 
+    sections.append(f"=== TODAY'S DATE: {today.get('date')} ===")
     # Today's scores
     sections.append("=== TODAY'S METRICS ===")
     if today.get("has_oura_data"):
@@ -236,7 +243,15 @@ def build_insight_prompt(today: dict, trends: list, personal_context: dict, acti
     sections.append("\n=== 7-DAY TRENDS ===")
     sections.append(f"Avg sleep score: {avg_sleep} | Avg readiness: {avg_readiness} | Avg HRV balance score: {avg_hrv}")
     sections.append(f"Avg resting HR: {avg_rhr} bpm | Avg HRV: {avg_hrv_ms} ms")
-    sections.append(f"Workouts in last 7 days: {recent_workouts}")
+    sections.append(f"Strength workouts in last 7 days: {recent_workouts}")
+    if recent_run_rows:
+        pace_str = f" | Avg pace: {avg_run_pace} min/mile" if avg_run_pace else ""
+        sections.append(f"Runs in last 7 days: {len(recent_run_rows)} ({recent_run_miles} miles total{pace_str})")
+        for r in recent_run_rows:
+            pace = f" @ {r['run_pace_min_per_mile']} min/mile" if r.get("run_pace_min_per_mile") else ""
+            sections.append(f"  - {r['date']}: {r['run_distance_miles']} mi{pace}")
+    else:
+        sections.append("Runs in last 7 days: 0")
 
     # Weather
     sections.append("\n=== TODAY'S WEATHER ===")

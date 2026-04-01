@@ -35,7 +35,18 @@ activity as (
 ),
 
 manual_runs as (
-    select * from {{ ref('stg_manual_runs') }}
+    select
+        date,
+        round(sum(distance_miles), 2)                                   as distance_miles,
+        round(sum(duration_seconds) / 60.0, 2)                          as duration_minutes,
+        round(
+            (sum(duration_seconds) / 60.0) / nullif(sum(distance_miles), 0),
+            2
+        )                                                               as pace_min_per_mile,
+        count(*)                                                        as run_count,
+        string_agg(notes, '; ' order by logged_at) filter (where notes is not null) as notes
+    from {{ ref('stg_manual_runs') }}
+    group by date
 ),
 
 mood as (
@@ -124,18 +135,18 @@ select
     oura_workouts.oura_workout_calories,
     oura_workouts.oura_workout_types,
 
-    -- Runs: Oura-tracked distance when available, fall back to manual entry
+    -- Runs: manual entry is primary; Oura is supplementary fallback only
     coalesce(oura_runs.oura_run_count, 0)           as oura_run_count,
     oura_runs.oura_run_minutes,
+    oura_runs.oura_run_distance_miles,
     coalesce(
-        nullif(oura_runs.oura_run_distance_miles, 0),
-        manual_runs.distance_miles
+        manual_runs.distance_miles,
+        oura_runs.oura_run_distance_miles
     )                                               as run_distance_miles,
     coalesce(
-        oura_runs.oura_run_minutes,
-        manual_runs.duration_minutes
+        manual_runs.duration_minutes,
+        oura_runs.oura_run_minutes
     )                                               as run_duration_minutes,
-    -- Pace only from manual runs (Oura doesn't give per-run pace directly)
     manual_runs.pace_min_per_mile                   as run_pace_min_per_mile,
     manual_runs.notes                               as run_notes,
 

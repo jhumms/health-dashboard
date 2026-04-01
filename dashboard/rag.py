@@ -368,6 +368,19 @@ def get_workout_history(start_date: str | None = None, end_date: str | None = No
         ORDER BY has_workout DESC
     """
 
+    sql_runs = """
+        SELECT
+            id,
+            date,
+            distance_miles,
+            round(duration_seconds / 60.0, 2)                              AS duration_minutes,
+            round((duration_seconds / 60.0) / nullif(distance_miles, 0), 2) AS pace_min_per_mile,
+            notes
+        FROM raw.manual_runs
+        WHERE date BETWEEN %(start)s AND %(end)s
+        ORDER BY date ASC, logged_at ASC
+    """
+
     try:
         conn = _connect()
         params = {"start": start, "end": end}
@@ -384,11 +397,22 @@ def get_workout_history(start_date: str | None = None, end_date: str | None = No
             cur.execute(sql_rest_vs_workout, params)
             rest_vs_workout = [_clean_row(dict(r)) for r in cur.fetchall()]
 
+            cur.execute(sql_runs, params)
+            runs = [_clean_row(dict(r)) for r in cur.fetchall()]
+
         conn.close()
 
         total_days = (date.fromisoformat(end) - date.fromisoformat(start)).days + 1
         summary["total_days_in_period"] = total_days
         summary["rest_days"] = total_days - (summary.get("workout_days") or 0)
+
+        run_distances = [r["distance_miles"] for r in runs if r.get("distance_miles")]
+        run_paces = [r["pace_min_per_mile"] for r in runs if r.get("pace_min_per_mile")]
+        run_summary = {
+            "total_runs": len(runs),
+            "total_miles": round(sum(run_distances), 2) if run_distances else 0,
+            "avg_pace_min_per_mile": round(sum(run_paces) / len(run_paces), 2) if run_paces else None,
+        }
 
         return {
             "period": f"{start} to {end}",
@@ -396,6 +420,8 @@ def get_workout_history(start_date: str | None = None, end_date: str | None = No
             "weekly_breakdown": weekly,
             "workout_types": workout_types,
             "rest_vs_workout_day_comparison": rest_vs_workout,
+            "run_summary": run_summary,
+            "runs": runs,
         }
     except Exception as e:
         log.error("get_workout_history error: %s", e)
@@ -423,11 +449,6 @@ def log_run(
                 """
                 INSERT INTO raw.manual_runs (date, distance_miles, duration_seconds, notes)
                 VALUES (%s, %s, %s, %s)
-                ON CONFLICT (date) DO UPDATE
-                    SET distance_miles   = EXCLUDED.distance_miles,
-                        duration_seconds = EXCLUDED.duration_seconds,
-                        notes            = EXCLUDED.notes,
-                        logged_at        = NOW()
                 """,
                 (run_date, distance_miles, duration_seconds, notes),
             )
@@ -584,9 +605,11 @@ TOOL_DEFINITIONS = [
     {
         "name": "get_workout_history",
         "description": (
-            "Get a comprehensive workout analysis for a date range: total sessions, total minutes, "
-            "weekly breakdown, workout type frequency, and a comparison of health metrics on workout "
-            "days vs rest days. Use for questions about training load, consistency, or recovery patterns."
+            "Get a comprehensive activity analysis for a date range. Covers strength workouts (sessions, "
+            "minutes, exercises, weekly breakdown) AND runs (every run with date, distance in miles, "
+            "duration, pace in min/mile, plus summary totals). Also compares health metrics on workout "
+            "days vs rest days. Use for ANY question about runs, pace, mileage, training load, "
+            "consistency, or recovery patterns."
         ),
         "input_schema": {
             "type": "object",
