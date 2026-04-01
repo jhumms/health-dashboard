@@ -190,18 +190,22 @@ def fetch_data(conn):
 # Claude insights
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are a personal health advisor for {name}. You have complete access to their health metrics, weather, and personal situation.
+SYSTEM_PROMPT = """You are a personal health coach for {name}. You have complete access to their health metrics, weather, and personal situation.
 
 Personal context:
 {personal_context}
 {active_notes}
-Be direct and practical. Acknowledge the reality of new parenthood — sleep may be fragmented regardless of what trackers show. Prioritize recovery and sustainability over performance. When recommending workout timing, factor in weather windows, readiness score, and realistic baby schedule gaps. Never be preachy. Keep it concise and actionable."""
+Your tone is always upbeat, encouraging, and positive — celebrate progress, frame challenges as opportunities, and keep the energy high. Be concise and direct. Acknowledge the reality of new parenthood — sleep may be fragmented and that's okay. Focus on what {name} can control today: sleep quality, steps, and running toward their 5k goal.
+
+Step goal: 7,500 steps/day average. Running goal: 5k in under 24:30 (that's ~7:54/mile pace for 3.1 miles).
+
+Always prioritize in this order: (1) sleep/recovery recap, (2) activity level recommendation, (3) running update and coaching, (4) steps progress, (5) weather for any outdoor activity."""
 
 
 def build_insight_prompt(today: dict, trends: list, personal_context: dict, active_notes: list | None = None) -> str:
     """Build a structured prompt for today's health insights."""
     if not today:
-        return "No health data available for today yet."
+        today = {}
 
     # Recent trend averages (last 7 days with data)
     recent = [r for r in trends[-7:] if r.get("has_oura_data")]
@@ -210,10 +214,21 @@ def build_insight_prompt(today: dict, trends: list, personal_context: dict, acti
     avg_hrv = round(sum(r["hrv_balance_score"] for r in recent if r["hrv_balance_score"]) / max(len(recent), 1), 1) if recent else None
     avg_rhr = round(sum(r["resting_heart_rate"] for r in recent if r.get("resting_heart_rate")) / max(sum(1 for r in recent if r.get("resting_heart_rate")), 1), 1) if recent else None
     avg_hrv_ms = round(sum(r["average_hrv"] for r in recent if r.get("average_hrv")) / max(sum(1 for r in recent if r.get("average_hrv")), 1), 1) if recent else None
+
+    # Steps (yesterday + 7-day average, goal: 7500)
+    step_rows = [r for r in trends[-7:] if r.get("preferred_steps")]
+    avg_steps = round(sum(r["preferred_steps"] for r in step_rows) / len(step_rows)) if step_rows else None
+    yesterday_steps_row = next((r for r in reversed(trends) if r.get("preferred_steps")), None)
+    yesterday_steps = yesterday_steps_row.get("preferred_steps") if yesterday_steps_row else None
+    yesterday_steps_date = yesterday_steps_row.get("date") if yesterday_steps_row else None
+
     recent_workouts = sum(1 for r in trends[-7:] if r.get("has_workout"))
+
+    # Run data: 14-day window for coaching context
+    run_rows_14d = [r for r in trends[-14:] if r.get("has_run") and r.get("run_distance_miles")]
     recent_run_rows = [r for r in trends[-7:] if r.get("has_run") and r.get("run_distance_miles")]
-    recent_run_miles = round(sum(r["run_distance_miles"] for r in recent_run_rows), 2) if recent_run_rows else 0
-    recent_run_paces = [r["run_pace_min_per_mile"] for r in recent_run_rows if r.get("run_pace_min_per_mile")]
+    recent_run_miles = round(sum(r["run_distance_miles"] for r in run_rows_14d), 2) if run_rows_14d else 0
+    recent_run_paces = [r["run_pace_min_per_mile"] for r in run_rows_14d if r.get("run_pace_min_per_mile")]
     avg_run_pace = round(sum(recent_run_paces) / len(recent_run_paces), 2) if recent_run_paces else None
 
     sections = []
@@ -228,8 +243,10 @@ def build_insight_prompt(today: dict, trends: list, personal_context: dict, acti
     else:
         sections.append("Oura data: not yet available")
 
-    if today.get("preferred_steps"):
-        sections.append(f"Steps: {today.get('preferred_steps'):,}")
+    if yesterday_steps:
+        steps_vs_goal = yesterday_steps - 7500
+        steps_note = f" (+{steps_vs_goal:,} over goal)" if steps_vs_goal >= 0 else f" ({abs(steps_vs_goal):,} short of 7,500 goal)"
+        sections.append(f"Steps yesterday ({yesterday_steps_date}): {yesterday_steps:,}{steps_note}")
 
     if today.get("has_mood_log"):
         state = today.get("mood_state") or ""
@@ -243,15 +260,23 @@ def build_insight_prompt(today: dict, trends: list, personal_context: dict, acti
     sections.append("\n=== 7-DAY TRENDS ===")
     sections.append(f"Avg sleep score: {avg_sleep} | Avg readiness: {avg_readiness} | Avg HRV balance score: {avg_hrv}")
     sections.append(f"Avg resting HR: {avg_rhr} bpm | Avg HRV: {avg_hrv_ms} ms")
+    if avg_steps is not None:
+        steps_diff = avg_steps - 7500
+        steps_trend = f"+{steps_diff:,} above" if steps_diff >= 0 else f"{abs(steps_diff):,} below"
+        sections.append(f"Avg steps (7d): {avg_steps:,} ({steps_trend} 7,500 goal)")
     sections.append(f"Strength workouts in last 7 days: {recent_workouts}")
-    if recent_run_rows:
+
+    # 14-day run history
+    if run_rows_14d:
         pace_str = f" | Avg pace: {avg_run_pace} min/mile" if avg_run_pace else ""
-        sections.append(f"Runs in last 7 days: {len(recent_run_rows)} ({recent_run_miles} miles total{pace_str})")
-        for r in recent_run_rows:
+        sections.append(f"\nRuns in last 14 days: {len(run_rows_14d)} ({recent_run_miles} miles total{pace_str})")
+        sections.append("5k goal pace: 7:54/mile (24:30 finish)")
+        for r in run_rows_14d:
             pace = f" @ {r['run_pace_min_per_mile']} min/mile" if r.get("run_pace_min_per_mile") else ""
-            sections.append(f"  - {r['date']}: {r['run_distance_miles']} mi{pace}")
+            dist = r['run_distance_miles']
+            sections.append(f"  - {r['date']}: {dist} mi{pace}")
     else:
-        sections.append("Runs in last 7 days: 0")
+        sections.append("\nRuns in last 14 days: 0")
 
     # Weather
     sections.append("\n=== TODAY'S WEATHER ===")
@@ -274,13 +299,22 @@ def build_insight_prompt(today: dict, trends: list, personal_context: dict, acti
 
     return f"""{health_context}{notes_section}
 
-Based on all of this, provide Joshua with:
-1. A brief one-paragraph status summary ("How you're doing today")
-2. 2-3 specific, actionable recommendations for today (timing, workout, recovery, etc.)
-3. One thing to watch out for or be aware of
+Based on all of this, provide Joshua with a daily coaching summary. Be upbeat and positive throughout.
 
-Format as JSON with keys: "status_summary", "recommendations" (list of strings), "watchout" (string).
-Keep it concise — this is for a daily dashboard glance, not a medical report."""
+Structure your response as JSON with these exact keys:
+
+"status_summary": 2-3 sentences covering:
+  (a) sleep quality and what it means for today — classify today as LIGHT, MODERATE, or HARD effort day based on sleep/readiness score (light = poor sleep/low readiness, moderate = average, hard = great sleep/high readiness)
+  (b) brief weather note for outdoor activity if relevant
+
+"recommendations": a JSON array of exactly 3 plain strings (no nested objects, no keys — just 3 strings) in this order:
+  1. Running coaching string: the overall goal is a 5k in sub-24:30 (7:54/mile). Look at the past 14 days of runs — their frequency, distances, and paces — and give ONE specific training suggestion for today based on where they are in their training. Pick from: easy recovery run, tempo run (sustained 7:30–8:00/mile effort), interval sprints (e.g. 6x400m fast), long slow run (build aerobic base), or rest/cross-train. Choose based on how many days since the last run and what type of run they haven't done recently. Be specific: tell them what to do and why it helps the 5k goal. Keep it to 2 sentences max.
+  2. Steps string: reference yesterday's step count vs the 7,500/day goal, and how the 7-day average is trending — give one positive nudge for today.
+  3. Activity/recovery string: a positive, achievable tip based on the effort classification for today.
+
+"watchout": one constructive, positive heads-up (not a warning — frame it as something to be aware of that helps them succeed)
+
+Format as JSON only. No markdown. Keep each item concise (1-2 sentences)."""
 
 
 def get_insights(today: dict, trends: list, personal_context: dict, dry_run: bool = False) -> dict:
