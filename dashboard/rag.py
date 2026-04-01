@@ -33,14 +33,17 @@ DB_DSN = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/health_
 NUMERIC_METRICS = {
     "sleep_score", "deep_sleep_score", "rem_sleep_score", "restfulness_score",
     "readiness_score", "hrv_balance_score", "recovery_index_score", "temperature_deviation",
-    "activity_score", "preferred_steps", "active_calories", "oura_steps", "garmin_steps",
+    "activity_score", "preferred_steps", "active_calories", "oura_steps",
+    "run_distance_miles", "run_duration_minutes", "run_pace_min_per_mile",
+    "oura_workout_count", "oura_workout_minutes", "oura_workout_calories",
+    "oura_run_count", "oura_run_minutes",
     "high_activity_time_s", "medium_activity_time_s", "sedentary_time_s",
     "mood_score",
     "workout_count", "total_exercises", "total_workout_minutes",
-    "temp_max_f", "temp_min_f", "temp_max_c", "temp_min_c",
+    "temp_max_f", "temp_min_f",
     "precip_sum_mm", "precip_prob_max",
     "morning_precip_prob", "afternoon_precip_prob", "evening_precip_prob",
-    "morning_temp_c", "afternoon_temp_c", "evening_temp_c",
+    "morning_temp_f", "afternoon_temp_f", "evening_temp_f",
 }
 
 METRIC_LABELS = {
@@ -55,12 +58,23 @@ METRIC_LABELS = {
     "activity_score": "Activity Score",
     "preferred_steps": "Steps",
     "active_calories": "Active Calories",
+    "run_distance_miles": "Run Distance (miles)",
+    "run_duration_minutes": "Run Duration (min)",
+    "run_pace_min_per_mile": "Run Pace (min/mile)",
+    "oura_workout_count": "Oura Workouts",
+    "oura_workout_minutes": "Oura Workout Minutes",
+    "oura_workout_calories": "Oura Workout Calories",
+    "oura_run_count": "Oura Runs",
+    "oura_run_minutes": "Oura Run Minutes",
     "mood_score": "Mood Score",
     "workout_count": "Workouts",
     "total_exercises": "Total Exercises",
     "total_workout_minutes": "Workout Minutes",
     "temp_max_f": "Max Temp (°F)",
     "temp_min_f": "Min Temp (°F)",
+    "morning_temp_f": "Morning Temp (°F)",
+    "afternoon_temp_f": "Afternoon Temp (°F)",
+    "evening_temp_f": "Evening Temp (°F)",
 }
 
 
@@ -78,7 +92,7 @@ def _clean_row(row: dict) -> dict:
 
 
 def _connect():
-    return psycopg2.connect(DB_DSN)
+    return psycopg2.connect(os.getenv("DATABASE_URL", DB_DSN))
 
 
 def _resolve_dates(start_date: str | None, end_date: str | None) -> tuple[str, str]:
@@ -161,6 +175,7 @@ def get_period_stats(metric: str, start_date: str | None = None, end_date: str |
 ALLOWED_DAILY_COLUMNS = NUMERIC_METRICS | {
     "date", "mood", "daylio_activities", "workout_names",
     "weather_desc", "has_oura_data", "has_workout", "has_mood_log", "has_weather",
+    "run_notes", "has_run",
 }
 
 
@@ -385,6 +400,54 @@ def get_workout_history(start_date: str | None = None, end_date: str | None = No
     except Exception as e:
         log.error("get_workout_history error: %s", e)
         return {"error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Tool 5: log_run
+# ---------------------------------------------------------------------------
+
+def log_run(
+    distance_miles: float,
+    duration_seconds: int,
+    date: str | None = None,
+    notes: str | None = None,
+) -> dict:
+    """Save a manually logged run to raw.manual_runs."""
+    run_date = date or _today_str()
+    pace = round((duration_seconds / 60.0) / distance_miles, 2) if distance_miles else None
+
+    try:
+        conn = _connect()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO raw.manual_runs (date, distance_miles, duration_seconds, notes)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (date) DO UPDATE
+                    SET distance_miles   = EXCLUDED.distance_miles,
+                        duration_seconds = EXCLUDED.duration_seconds,
+                        notes            = EXCLUDED.notes,
+                        logged_at        = NOW()
+                """,
+                (run_date, distance_miles, duration_seconds, notes),
+            )
+        conn.commit()
+        conn.close()
+        minutes, secs = divmod(duration_seconds, 60)
+        return {
+            "saved": True,
+            "date": run_date,
+            "distance_miles": distance_miles,
+            "duration": f"{minutes}:{secs:02d}",
+            "pace_min_per_mile": pace,
+        }
+    except Exception as e:
+        log.error("log_run error: %s", e)
+        return {"error": str(e)}
+
+
+def _today_str() -> str:
+    return date.today().isoformat()
 
 
 # ---------------------------------------------------------------------------

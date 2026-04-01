@@ -1,12 +1,11 @@
 """
 health_nightly.py — Airflow DAG for the nightly health data pipeline
 
-Schedule: 23:00 every night (replaces individual cron jobs)
+Schedule: 07:30 every morning
 
 Pipeline order:
   rclone_daylio ─┐
   ingest_oura    ├─► dbt_run ─► generate_dashboard
-  ingest_garmin  │
   ingest_weather │
   ingest_daily_strength
 """
@@ -63,12 +62,6 @@ with DAG(
         bash_command=f"{PYTHON} {INGESTION}/ingest_oura.py",
     )
 
-    ingest_garmin = BashOperator(
-        task_id="ingest_garmin",
-        bash_command=f"{PYTHON} {INGESTION}/ingest_garmin.py || exit 99",
-        skip_on_exit_code=99,
-    )
-
     ingest_weather = BashOperator(
         task_id="ingest_weather",
         bash_command=f"{PYTHON} {INGESTION}/ingest_weather.py",
@@ -103,7 +96,7 @@ with DAG(
     rclone_daylio >> ingest_daylio
 
     # All ingestions must complete before dbt
-    [ingest_oura, ingest_garmin, ingest_weather, ingest_daily_strength, ingest_daylio] >> dbt_run
+    [ingest_oura, ingest_weather, ingest_daily_strength, ingest_daylio] >> dbt_run
 
     # dbt must complete before dashboard
     dbt_run >> generate_dashboard

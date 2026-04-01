@@ -95,10 +95,14 @@ SELECT
     total_exercises,
     total_workout_minutes,
     workout_names,
+    oura_workout_count,
+    oura_workout_minutes,
+    oura_workout_types,
+    run_distance_miles,
     has_oura_data,
-    has_garmin_steps,
     has_mood_log,
-    has_workout
+    has_workout,
+    has_run
 FROM staging_marts.daily_summary
 WHERE date >= %(start_date)s
 ORDER BY date ASC
@@ -122,7 +126,6 @@ SELECT
     preferred_steps,
     active_calories,
     oura_steps,
-    garmin_steps,
     high_activity_time_s,
     medium_activity_time_s,
     sedentary_time_s,
@@ -147,6 +150,9 @@ SELECT
     morning_temp_c,
     afternoon_temp_c,
     evening_temp_c,
+    morning_temp_f,
+    afternoon_temp_f,
+    evening_temp_f,
     morning_precip_prob,
     afternoon_precip_prob,
     evening_precip_prob,
@@ -155,9 +161,9 @@ SELECT
     hot_day,
     cold_day,
     has_oura_data,
-    has_garmin_steps,
     has_mood_log,
     has_workout,
+    has_run,
     has_weather
 FROM staging_marts.daily_summary
 WHERE date = %(today)s
@@ -235,11 +241,11 @@ def build_insight_prompt(today: dict, trends: list, personal_context: dict, acti
     # Weather
     sections.append("\n=== TODAY'S WEATHER ===")
     if today.get("has_weather"):
-        sections.append(f"{today.get('weather_desc')} | High: {today.get('temp_max_f')}°F ({today.get('temp_max_c')}°C) | Low: {today.get('temp_min_f')}°F ({today.get('temp_min_c')}°C)")
+        sections.append(f"{today.get('weather_desc')} | High: {today.get('temp_max_f')}°F | Low: {today.get('temp_min_f')}°F")
         sections.append(f"Rain probability: {today.get('precip_prob_max')}% | Likely rain: {today.get('likely_rain')}")
-        sections.append(f"Morning: {today.get('morning_temp_c')}°C, {today.get('morning_precip_prob')}% rain")
-        sections.append(f"Afternoon: {today.get('afternoon_temp_c')}°C, {today.get('afternoon_precip_prob')}% rain")
-        sections.append(f"Evening: {today.get('evening_temp_c')}°C, {today.get('evening_precip_prob')}% rain")
+        sections.append(f"Morning: {today.get('morning_temp_f')}°F, {today.get('morning_precip_prob')}% rain")
+        sections.append(f"Afternoon: {today.get('afternoon_temp_f')}°F, {today.get('afternoon_precip_prob')}% rain")
+        sections.append(f"Evening: {today.get('evening_temp_f')}°F, {today.get('evening_precip_prob')}% rain")
         sections.append(f"Better to exercise in morning: {today.get('better_in_morning')} | Hot day: {today.get('hot_day')} | Cold day: {today.get('cold_day')}")
         sections.append(f"Sunrise: {today.get('sunrise')} | Sunset: {today.get('sunset')}")
     else:
@@ -764,7 +770,14 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 
   <!-- Workout summary -->
   <div class="card" style="margin-bottom:1.5rem">
-    <div class="card-title">Workouts — 30 Days</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
+      <div class="card-title" style="margin-bottom:0;">Workouts — 30 Days</div>
+      <div style="font-size:0.72rem;color:var(--text-dim);display:flex;gap:0.75rem;">
+        <span><span style="color:#1155BB;">●</span> Strength</span>
+        <span><span style="color:#22AA66;">●</span> Oura (runs/walks)</span>
+        <span><span style="color:#AA44FF;">●</span> Both</span>
+      </div>
+    </div>
     <div class="chart-container" id="chart-workouts"></div>
   </div>
 
@@ -799,17 +812,17 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
     <div class="time-of-day">
       <div class="tod-block">
         <div class="tod-label">Morning (6–9am)</div>
-        <div class="tod-temp">{{ today.morning_temp_c }}°C</div>
+        <div class="tod-temp">{{ today.morning_temp_f }}°F</div>
         <div class="tod-rain">{{ today.morning_precip_prob|int }}% rain</div>
       </div>
       <div class="tod-block">
         <div class="tod-label">Afternoon (12–3pm)</div>
-        <div class="tod-temp">{{ today.afternoon_temp_c }}°C</div>
+        <div class="tod-temp">{{ today.afternoon_temp_f }}°F</div>
         <div class="tod-rain">{{ today.afternoon_precip_prob|int }}% rain</div>
       </div>
       <div class="tod-block">
         <div class="tod-label">Evening (5–10pm)</div>
-        <div class="tod-temp">{{ today.evening_temp_c }}°C</div>
+        <div class="tod-temp">{{ today.evening_temp_f }}°F</div>
         <div class="tod-rain">{{ today.evening_precip_prob|int }}% rain</div>
       </div>
     </div>
@@ -1172,7 +1185,8 @@ function barChart(containerId, data, key, color, opts = {}) {
     .range([0, w])
     .padding(0.2);
 
-  const yMax = d3.max(data, d => d[key] || 0) || 1;
+  const getVal = typeof key === "function" ? key : d => d[key] || 0;
+  const yMax = d3.max(data, d => getVal(d)) || 1;
   const y = d3.scaleLinear().domain([0, yMax]).range([h, 0]);
 
   g.append("g").attr("transform", `translate(0,${h})`)
@@ -1187,14 +1201,14 @@ function barChart(containerId, data, key, color, opts = {}) {
     .data(data)
     .join("rect")
     .attr("x", d => x(d.date))
-    .attr("y", d => y(d[key] || 0))
+    .attr("y", d => y(getVal(d)))
     .attr("width", x.bandwidth())
-    .attr("height", d => h - y(d[key] || 0))
+    .attr("height", d => h - y(getVal(d)))
     .attr("fill", d => typeof color === "function" ? color(d) : color)
     .attr("rx", 2)
     .on("mouseover", (event, d) => {
-      const label = opts.label || key;
-      const val = opts.formatVal ? opts.formatVal(d[key]) : d[key];
+      const label = opts.label || (typeof key === "string" ? key : "");
+      const val = opts.formatVal ? opts.formatVal(getVal(d), d) : getVal(d);
       showTooltip(event, `<b>${fmt(parseDate(d.date))}</b><br>${label}: <b>${val || 0}</b>`);
     })
     .on("mouseout", hideTooltip);
@@ -1226,10 +1240,24 @@ window.addEventListener("DOMContentLoaded", () => {
     { key: "mood_score", label: "Mood", color: "#FFCC00" },
   ], { yMin: 1, yMax: 5 });
 
-  barChart("chart-workouts", TREND_DATA, "workout_count",
-    d => (d.workout_count || 0) > 0 ? "#1155BB" : "#CCCCCC",
+  barChart("chart-workouts", TREND_DATA, d => (d.workout_count || 0) + (d.oura_workout_count || 0),
+    d => {
+      const strength = (d.workout_count || 0) > 0;
+      const oura = (d.oura_workout_count || 0) > 0;
+      if (strength && oura) return "#AA44FF";
+      if (strength) return "#1155BB";
+      if (oura) return "#22AA66";
+      return "#CCCCCC";
+    },
     { label: "Workouts", height: 90,
-      formatVal: v => v ? `${v} session${v > 1 ? "s" : ""}` : "rest day" });
+      formatVal: (v, d) => {
+        if (!v) return "rest day";
+        const parts = [];
+        if ((d.workout_count || 0) > 0) parts.push(`${d.workout_count} strength`);
+        if ((d.oura_workout_count || 0) > 0) parts.push(`${d.oura_workout_count} oura`);
+        return parts.join(" + ");
+      }
+    });
 });
 
 // ===== SESSION USAGE TRACKER =====
@@ -1458,10 +1486,9 @@ def build_health_context(today_row: dict, trend_rows: list, personal_context: di
             "desc": today_row.get("weather_desc"),
             "temp_max_f": today_row.get("temp_max_f"),
             "temp_min_f": today_row.get("temp_min_f"),
-            "temp_max_c": today_row.get("temp_max_c"),
-            "morning_temp_c": today_row.get("morning_temp_c"),
-            "afternoon_temp_c": today_row.get("afternoon_temp_c"),
-            "evening_temp_c": today_row.get("evening_temp_c"),
+            "morning_temp_f": today_row.get("morning_temp_f"),
+            "afternoon_temp_f": today_row.get("afternoon_temp_f"),
+            "evening_temp_f": today_row.get("evening_temp_f"),
             "morning_precip_prob": today_row.get("morning_precip_prob"),
             "afternoon_precip_prob": today_row.get("afternoon_precip_prob"),
             "evening_precip_prob": today_row.get("evening_precip_prob"),
@@ -1518,7 +1545,7 @@ def render_dashboard(today_row: dict, trend_rows: list, insights: dict, personal
         today_clean[field] = yesterday_row.get(field) if has_yesterday_mood else None
     today_clean["mood_tags"] = yesterday_row.get("mood_tags") or [] if has_yesterday_mood else []
 
-    has_yesterday_activity = bool(yesterday_row.get("has_garmin_steps") or yesterday_row.get("activity_score"))
+    has_yesterday_activity = bool(yesterday_row.get("has_oura_data") or yesterday_row.get("activity_score"))
     for field in ("activity_score", "preferred_steps", "active_calories", "workout_count",
                   "total_workout_minutes", "workout_names", "has_workout"):
         today_clean[field] = yesterday_row.get(field) if has_yesterday_activity else None

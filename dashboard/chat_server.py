@@ -107,6 +107,54 @@ If no temporary condition is mentioned, respond with:
 Respond with JSON only. No other text."""
 
 
+RUN_DETECTION_PROMPT = """Does this message mention that the person just went for a run or is logging a run they completed?
+Only detect runs that the user is reporting as done — not questions about past runs or future plans.
+
+If yes, extract the details and respond with JSON only:
+{"detected": true, "distance_miles": <float>, "duration_seconds": <integer>, "date": "<YYYY-MM-DD or null>", "notes": "<optional string or null>"}
+
+Conversion rules:
+- Distance: convert km to miles (1 km = 0.621371 miles), default to miles if unit unclear
+- Duration: convert any format to total seconds (e.g. "28:30" → 1710, "1h 5m" → 3900)
+- Date: use null if not specified (caller will default to today); interpret relative terms like "yesterday" using today's date
+- notes: capture any qualitative details (route, how it felt, conditions)
+
+Today's date: {today}
+
+If no run is being reported, respond with:
+{"detected": false}
+
+Respond with JSON only. No other text."""
+
+
+def _detect_and_log_run(message: str) -> dict | None:
+    """Run a cheap Haiku pre-pass to detect and save a reported run. Returns saved run dict or None."""
+    try:
+        today = rag._today_str()
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        resp = client.messages.create(
+            model=DETECTION_MODEL,
+            max_tokens=150,
+            messages=[{"role": "user", "content": message}],
+            system=RUN_DETECTION_PROMPT.format(today=today),
+        )
+        raw = next((b.text for b in resp.content if b.type == "text"), "").strip()
+        result = json.loads(raw)
+        llm_logging.log_llm_call("run_detection", DETECTION_MODEL, resp.usage.input_tokens, resp.usage.output_tokens)
+        if result.get("detected"):
+            saved = rag.log_run(
+                distance_miles=result["distance_miles"],
+                duration_seconds=result["duration_seconds"],
+                date=result.get("date"),
+                notes=result.get("notes"),
+            )
+            log.info("Auto-logged run via Haiku: %s", saved)
+            return saved
+    except Exception as e:
+        log.warning("Run detection failed (non-fatal): %s", e)
+    return None
+
+
 def _detect_and_save_condition(message: str) -> None:
     """Run a cheap Haiku pre-pass to detect and persist any temporary health condition."""
     try:
@@ -142,9 +190,10 @@ def chat():
     personal = health_context.get("personal", {})
     name = personal.get("name", "Joshua")
 
-    # Pre-pass: detect and save any temporary health condition before main chat.
+    # Pre-pass: detect and save any temporary health condition or run before main chat.
     # Done separately so it never gets dropped in favour of answering the question.
     _detect_and_save_condition(user_message)
+    saved_run = _detect_and_log_run(user_message)
 
     active = context_notes.get_active_notes()
     notes_block = ("\n" + context_notes.format_for_prompt(active) + "\n") if active else ""
@@ -157,7 +206,14 @@ def chat():
 
     # First user message: today's context + the question
     context_summary = _format_context(health_context)
-    first_message = f"{context_summary}\n\nQuestion: {user_message}"
+    run_note = (
+        f"\n\n[System: Run already saved to database — {saved_run['distance_miles']} mi in "
+        f"{saved_run['duration']} ({saved_run['pace_min_per_mile']} min/mile pace) on {saved_run['date']}. "
+        f"Confirm this back to the user naturally, no need to re-save.]"
+        if saved_run and not saved_run.get("error")
+        else ""
+    )
+    first_message = f"{context_summary}\n\nQuestion: {user_message}{run_note}"
 
     messages = [{"role": "user", "content": first_message}]
 

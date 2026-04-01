@@ -13,11 +13,13 @@ with spine as (
     union
     select date from {{ ref('stg_oura_daily_activity') }}
     union
-    select date from {{ ref('stg_garmin_daily_steps') }}
-    union
     select date from {{ ref('stg_daylio_logs') }}
     union
     select date from {{ ref('stg_daily_strength_session') }}
+    union
+    select date from {{ ref('stg_manual_runs') }}
+    union
+    select date from {{ ref('stg_oura_workout') }}
 ),
 
 sleep as (
@@ -32,8 +34,8 @@ activity as (
     select * from {{ ref('stg_oura_daily_activity') }}
 ),
 
-steps as (
-    select * from {{ ref('stg_garmin_daily_steps') }}
+manual_runs as (
+    select * from {{ ref('stg_manual_runs') }}
 ),
 
 mood as (
@@ -52,12 +54,37 @@ sleep_sessions as (
 strength as (
     select
         date,
-        count(*)                        as workout_count,
-        sum(exercise_count)             as total_exercises,
-        sum(extract(epoch from duration) / 60)  as total_workout_minutes,
-        string_agg(workout_name, ', ')  as workout_names
+        count(*)                                    as workout_count,
+        sum(exercise_count)                         as total_exercises,
+        sum(extract(epoch from duration) / 60)      as total_workout_minutes,
+        string_agg(workout_name, ', ')              as workout_names
     from {{ ref('stg_daily_strength_session') }}
     where is_complete = true
+    group by date
+),
+
+-- Aggregate all Oura-tracked workouts by date
+oura_workouts as (
+    select
+        date,
+        count(*)                                    as oura_workout_count,
+        round(sum(duration_minutes), 0)             as oura_workout_minutes,
+        round(sum(calories), 0)                     as oura_workout_calories,
+        string_agg(activity, ', ' order by activity) as oura_workout_types
+    from {{ ref('stg_oura_workout') }}
+    group by date
+),
+
+-- Oura-tracked runs specifically
+oura_runs as (
+    select
+        date,
+        count(*)                                    as oura_run_count,
+        round(sum(duration_minutes), 1)             as oura_run_minutes,
+        round(sum(distance_m) / 1609.34, 2)         as oura_run_distance_miles,
+        round(sum(calories), 0)                     as oura_run_calories
+    from {{ ref('stg_oura_workout') }}
+    where activity = 'running'
     group by date
 )
 
@@ -83,26 +110,39 @@ select
 
     -- Activity (Oura)
     activity.activity_score,
-    activity.steps                              as oura_steps,
+    activity.steps                                  as oura_steps,
     activity.active_calories,
     activity.total_calories,
     activity.high_activity_time_s,
     activity.medium_activity_time_s,
     activity.sedentary_time_s,
+    nullif(activity.steps, 0)                       as preferred_steps,
 
-    -- Steps (Garmin)
-    steps.steps                                 as garmin_steps,
+    -- Oura workouts (all types)
+    oura_workouts.oura_workout_count,
+    oura_workouts.oura_workout_minutes,
+    oura_workouts.oura_workout_calories,
+    oura_workouts.oura_workout_types,
 
-    -- Preferred steps: Oura first, fall back to Garmin if Oura missing or zero
+    -- Runs: Oura-tracked distance when available, fall back to manual entry
+    coalesce(oura_runs.oura_run_count, 0)           as oura_run_count,
+    oura_runs.oura_run_minutes,
     coalesce(
-        nullif(activity.steps, 0),
-        nullif(steps.steps, 0)
-    )                                           as preferred_steps,
+        nullif(oura_runs.oura_run_distance_miles, 0),
+        manual_runs.distance_miles
+    )                                               as run_distance_miles,
+    coalesce(
+        oura_runs.oura_run_minutes,
+        manual_runs.duration_minutes
+    )                                               as run_duration_minutes,
+    -- Pace only from manual runs (Oura doesn't give per-run pace directly)
+    manual_runs.pace_min_per_mile                   as run_pace_min_per_mile,
+    manual_runs.notes                               as run_notes,
 
     -- Mood (Daylio)
     mood.mood,
     mood.mood_score,
-    mood.activities_raw                         as daylio_activities,
+    mood.activities_raw                             as daylio_activities,
     mood.note_title,
 
     -- Strength training
@@ -112,7 +152,7 @@ select
     strength.workout_names,
 
     -- Weather
-    weather.city                                as weather_city,
+    weather.city                                    as weather_city,
     weather.temp_max_f,
     weather.temp_min_f,
     weather.temp_max_c,
@@ -125,6 +165,9 @@ select
     weather.morning_temp_c,
     weather.afternoon_temp_c,
     weather.evening_temp_c,
+    weather.morning_temp_f,
+    weather.afternoon_temp_f,
+    weather.evening_temp_f,
     weather.morning_precip_prob,
     weather.afternoon_precip_prob,
     weather.evening_precip_prob,
@@ -134,20 +177,22 @@ select
     weather.cold_day,
 
     -- Convenience flags
-    (sleep.sleep_score is not null)             as has_oura_data,
-    (steps.steps is not null)                   as has_garmin_steps,
-    (mood.mood is not null)                     as has_mood_log,
-    (strength.workout_count is not null)        as has_workout,
-    (weather.date is not null)                  as has_weather
+    (sleep.sleep_score is not null)                 as has_oura_data,
+    (mood.mood is not null)                         as has_mood_log,
+    (strength.workout_count is not null)            as has_workout,
+    (oura_runs.date is not null or manual_runs.date is not null) as has_run,
+    (weather.date is not null)                      as has_weather
 
 from spine
-left join sleep     on spine.date = sleep.date
-left join readiness on spine.date = readiness.date
-left join activity  on spine.date = activity.date
-left join steps     on spine.date = steps.date
-left join mood      on spine.date = mood.date
-left join strength  on spine.date = strength.date
+left join sleep          on spine.date = sleep.date
+left join readiness      on spine.date = readiness.date
+left join activity       on spine.date = activity.date
+left join oura_workouts  on spine.date = oura_workouts.date
+left join oura_runs      on spine.date = oura_runs.date
+left join manual_runs    on spine.date = manual_runs.date
+left join mood           on spine.date = mood.date
+left join strength       on spine.date = strength.date
 left join sleep_sessions on spine.date = sleep_sessions.date
-left join weather   on spine.date = weather.date
+left join weather        on spine.date = weather.date
 
 order by spine.date desc

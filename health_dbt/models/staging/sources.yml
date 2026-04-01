@@ -33,12 +33,19 @@ sources:
           warn_after: {count: 2, period: day}
           error_after: {count: 7, period: day}
 
-      - name: garmin_daily_steps
-        description: Garmin daily step counts (one row per day)
+      - name: oura_workout
+        description: Oura-detected workout sessions (running, walking, cycling, etc.)
         loaded_at_field: pulled_at
         freshness:
           warn_after: {count: 2, period: day}
           error_after: {count: 7, period: day}
+
+      - name: manual_runs
+        description: Manually logged runs (distance, duration, pace) entered via chat
+        loaded_at_field: logged_at
+        freshness:
+          warn_after: {count: 30, period: day}
+          error_after: {count: 90, period: day}
 
       - name: daylio_logs
         description: Daylio mood journal entries (one row per day)

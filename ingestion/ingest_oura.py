@@ -43,6 +43,9 @@ ENDPOINTS = {
     "workout":           "raw.oura_workout",
 }
 
+# Heartrate has no 'id' field — uses timestamp as unique key
+HEARTRATE_TABLE = "raw.oura_heartrate"
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -122,6 +125,32 @@ def upsert_records(conn, table: str, records: list[dict]) -> int:
     return inserted
 
 # ---------------------------------------------------------------------------
+# Heart rate (timestamp-keyed, no 'id' field)
+# ---------------------------------------------------------------------------
+
+def upsert_heartrate(conn, records: list[dict]) -> int:
+    if not records:
+        return 0
+    inserted = 0
+    with conn.cursor() as cur:
+        for record in records:
+            ts = record.get("timestamp")
+            if not ts:
+                continue
+            cur.execute(
+                f"""
+                INSERT INTO {HEARTRATE_TABLE} (timestamp, raw_data, pulled_at)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (timestamp) DO NOTHING
+                """,
+                (ts, json.dumps(record)),
+            )
+            if cur.rowcount > 0:
+                inserted += 1
+    conn.commit()
+    return inserted
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -153,6 +182,13 @@ def main():
         n = upsert_records(conn, table, records)
         log.info("  Inserted %d new rows into %s", n, table)
         total_inserted += n
+
+    log.info("Fetching heartrate ...")
+    hr_records = fetch_endpoint("heartrate", args.start, args.end)
+    log.info("  Got %d heartrate records from API", len(hr_records))
+    n = upsert_heartrate(conn, hr_records)
+    log.info("  Inserted %d new rows into %s", n, HEARTRATE_TABLE)
+    total_inserted += n
 
     conn.close()
     log.info("Done. Total new rows inserted: %d", total_inserted)
